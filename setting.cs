@@ -94,13 +94,13 @@ namespace game_mode {
             config.AppSettings.Settings["tr_host"].Value = tr_host.Text;
             config.AppSettings.Settings["tr_user"].Value = tr_user.Text;
             config.AppSettings.Settings["tr_pwd"].Value = tr_pwd.Text;
-            config.AppSettings.Settings["tr_speed_down"].Value = tr_speed_up.Text;
-            config.AppSettings.Settings["tr_speed_up"].Value = tr_speed_down.Text;
+            config.AppSettings.Settings["tr_speed_down"].Value = tr_speed_down.Text;
+            config.AppSettings.Settings["tr_speed_up"].Value = tr_speed_up.Text;
             config.AppSettings.Settings["rt_host"].Value = rt_host.Text;
             config.AppSettings.Settings["rt_user"].Value = rt_user.Text;
             config.AppSettings.Settings["rt_pwd"].Value = rt_pwd.Text;
-            config.AppSettings.Settings["rt_speed_down"].Value = rt_speed_up.Text;
-            config.AppSettings.Settings["rt_speed_up"].Value = rt_speed_down.Text;
+            config.AppSettings.Settings["rt_speed_down"].Value = rt_speed_down.Text;
+            config.AppSettings.Settings["rt_speed_up"].Value = rt_speed_up.Text;
             config.Save();
             this.configLoad();
             this.Close();
