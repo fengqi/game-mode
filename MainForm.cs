@@ -13,21 +13,51 @@ using System.Net;
 using System.Collections.Specialized;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Diagnostics;
+using System.Timers;
 
 namespace game_mode {
     public partial class GameMode : Form {
         private System.Configuration.Configuration config;
+        private bool GameModeStart = false;
 
         public GameMode() {
             InitializeComponent();
+            Control.CheckForIllegalCrossThreadCalls = false;
         }
 
         private void GameMode_Load(object sender, EventArgs e) {
             log("启动软件");
+            this.configLoad();
+
             this.btn_disable.Enabled = false;
 
             this.ShowInTaskbar = true;
             notifyIcon.Visible = false;
+
+            var timer = new System.Timers.Timer(10000);
+            timer.Elapsed += monitor;
+            timer.AutoReset = true;
+            timer.Enabled = true;
+        }
+
+        private void monitor(Object source, ElapsedEventArgs e) {
+            string Name = Process.GetCurrentProcess().ProcessName;
+            Process[] games = Process.GetProcessesByName("r5apex");
+            if (games.Length > 0) {
+                if (GameModeStart) {
+                    return;
+                }
+
+                log("识别到 Apex 进程，开启游戏模式。");
+                this.startGameMode();
+            }
+            else {
+                if (GameModeStart) {
+                    log("未识别到 Apex 进程，关闭游戏模式");
+                    this.stopGameMode();
+                }
+            }
         }
 
         private void GameMode_FormClosing(object sender, FormClosingEventArgs e) {
@@ -38,6 +68,7 @@ namespace game_mode {
         }
 
         private void GameMode_ResizeBegin(object sender, EventArgs e) {
+            log("调整窗口大小");
             return;
         }
 
@@ -49,24 +80,11 @@ namespace game_mode {
         }
 
         private void btn_enable_Click(object sender, EventArgs e) {
-            this.configLoad();
-            log("开启游戏模式");
-            
-            this.setRTorrentSpeed(false);
-            this.setTransmissionSpeed(false);
-
-            this.btn_enable.Enabled = false;
-            this.btn_disable.Enabled = true;
+            this.startGameMode();
         }
 
         private void btn_disable_Click(object sender, EventArgs e) {
-            log("关闭游戏模式");
-
-            this.setRTorrentSpeed(true);
-            this.setTransmissionSpeed(true);
-
-            this.btn_enable.Enabled = true;
-            this.btn_disable.Enabled = false;
+            this.stopGameMode();
         }
 
         private void log(string log) {
@@ -85,7 +103,42 @@ namespace game_mode {
             set.Show();
         }
 
-        private void setTransmissionSpeed(bool reset) {
+        private bool startGameMode() {
+            log("开启游戏模式");
+
+            this.configLoad();
+            var srt = this.setRTorrentSpeed(false);
+            var str = this.setTransmissionSpeed(false);
+            if (srt && str) {
+                this.GameModeStart = true;
+                this.btn_enable.Enabled = false;
+                this.btn_disable.Enabled = true;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool stopGameMode() {
+            log("关闭游戏模式");
+
+            var srt = this.setRTorrentSpeed(true);
+            var str = this.setTransmissionSpeed(true);
+            if (srt && str) {
+                this.GameModeStart = false;
+                this.btn_enable.Enabled = true;
+                this.btn_disable.Enabled = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool setTransmissionSpeed(bool reset) {
+            if (config.AppSettings.Settings["tr_host"] == null) {
+                return false;
+            }
+
             string host = config.AppSettings.Settings["tr_host"].Value;
             string user = config.AppSettings.Settings["tr_user"].Value;
             string pwd = config.AppSettings.Settings["tr_pwd"].Value;
@@ -103,7 +156,7 @@ namespace game_mode {
             var mc = Regex.Match(contents, @"<code>X-Transmission-Session-Id: (.*)<\/code>");
             if (mc.Groups.Count != 2) {
                 log("验证失败");
-                return;
+                return false;
             }
             var sessionId = mc.Groups[1].Value;
 
@@ -118,19 +171,26 @@ namespace game_mode {
             var json = new StringContent(payload, Encoding.UTF8, "application/json");
             response = client.PostAsync(host + "/transmission/rpc", json).Result;
             contents = response.Content.ReadAsStringAsync().Result.ToString();
-            if (contents.Contains("success")) {
-                if (!reset) {
-                    log(String.Format("TR 已限速: ↑{0}↓{1} KB/S", speed_up, speed_down));
-                }
-                else {
-                    log(String.Format("TR 已限速: ↑{0}↓{1} KB/S", 0, 0));
-                }
-            } else {
+            if (!contents.Contains("success")) {
                 log("call tr err: " + contents);
+                return false;
             }
+
+            if (!reset) {
+                log(String.Format("TR 已限速: ↑{0}↓{1} KB/S", speed_up, speed_down));
+            }
+            else {
+                log(String.Format("TR 已限速: ↑{0}↓{1} KB/S", 0, 0));
+            }
+
+            return true;
         }
 
-        private void setRTorrentSpeed(bool reset) {
+        private bool setRTorrentSpeed(bool reset) {
+            if (config.AppSettings.Settings["rt_host"] == null) {
+                return false;
+            }
+
             string host = config.AppSettings.Settings["rt_host"].Value;
             string user = config.AppSettings.Settings["rt_user"].Value;
             string pwd = config.AppSettings.Settings["rt_pwd"].Value;
@@ -162,16 +222,19 @@ namespace game_mode {
             client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", getBaiscAuthString(user, pwd));
             var response = client.PostAsync(host + "/plugins/httprpc/action.php", post).Result;
             var contents = response.Content.ReadAsStringAsync().Result.ToString();
-            if (contents == "[\"0\",\"0\"]") {
-                if (!reset) {
-                    log(String.Format("RT 已限速: ↑{0}↓{1} KB/S", speed_up, speed_down));
-                } else {
-                    log(String.Format("RT 已限速: ↑{0}↓{1} KB/S", 0, 0));
-                }
+            if (contents != "[\"0\",\"0\"]") {
+                log("call rt err: " + contents);
+                return false;
+            }
+            
+            if (!reset) {
+                log(String.Format("RT 已限速: ↑{0}↓{1} KB/S", speed_up, speed_down));
             }
             else {
-                log("call rt err: " + contents);
+                log(String.Format("RT 已限速: ↑{0}↓{1} KB/S", 0, 0));
             }
+
+            return true;
         }
 
         private string getBaiscAuthString(string user, string pwd) {
